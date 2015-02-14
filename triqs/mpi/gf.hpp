@@ -32,22 +32,16 @@ namespace mpi {
  template <typename G> struct mpi_impl_triqs_gfs {
 
   //---------
-  static void reduce_in_place(communicator c, G &g, int root) {
-   triqs::mpi::reduce_in_place(c, g.data(), root);
-   triqs::mpi::reduce_in_place(c, g.singularity(), root);
-  }
-
-  //---------
-  static void all_reduce_in_place(communicator c, G &g, int root) {
-   triqs::mpi::all_reduce_in_place(c, g.data(), root);
-   triqs::mpi::all_reduce_in_place(c, g.singularity(), root);
-  }
-
-  //---------
   static void broadcast(communicator c, G &g, int root) {
    // Shall we bcast mesh ?
    triqs::mpi::broadcast(c, g.data(), root);
    triqs::mpi::broadcast(c, g.singularity(), root);
+  }
+
+  //---------
+  static void reduce_in_place(communicator c, G &g, int root, bool all) {
+   triqs::mpi::reduce_in_place(c, g.data(), root, all);
+   triqs::mpi::reduce_in_place(c, g.singularity(), root, all);
   }
 
   //---------

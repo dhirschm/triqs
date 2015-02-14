@@ -18,10 +18,9 @@
  * TRIQS. If not, see <http://www.gnu.org/licenses/>.
  *
  ******************************************************************************/
-#include <iostream>
-#include <type_traits>
 #include <triqs/arrays.hpp>
 #include <iostream>
+//#include <type_traits>
 #include <fstream>
 #include <sstream>
 

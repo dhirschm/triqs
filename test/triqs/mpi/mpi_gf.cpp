@@ -2,7 +2,7 @@
  *
  * TRIQS: a Toolbox for Research in Interacting Quantum Systems
  *
- * Copyright (C) 2013 by O. Parcollet
+ * Copyright (C) 2014-2015 by O. Parcollet
  *
  * TRIQS is free software: you can redistribute it and/or modify it under the
  * terms of the GNU General Public License as published by the Free Software
@@ -19,10 +19,9 @@
  *
  ******************************************************************************/
 #define TRIQS_ARRAYS_ENFORCE_BOUNDCHECK
-#include <iostream>
-#include <type_traits>
 #include <triqs/gfs.hpp>
 #include <iostream>
+//#include <type_traits>
 #include <fstream>
 
 using namespace triqs;
@@ -35,6 +34,7 @@ int main(int argc, char* argv[]) {
  mpi::environment env(argc, argv);
  mpi::communicator world;
 
+ try { 
  std::ofstream out("node" + std::to_string(world.rank()));
 
  double beta = 10;
@@ -44,15 +44,13 @@ int main(int argc, char* argv[]) {
  auto g1 = gf<imfreq>{{beta, Fermion, Nfreq}, {1, 1}}; // using ARR = array<double,2>;
  g1(w_) << 1 / (w_ + 1);
 
- out << "g1.data" << g1.data() << std::endl;
-
  { 
   out<< "reduction "<< std::endl;
   gf<imfreq> g2 = mpi::reduce(g1, world);
   out << g2.data()<<std::endl;
   out << g2.singularity() << std::endl;
  }
- 
+
  { 
   out<< "all reduction "<< std::endl;
   gf<imfreq> g2 = mpi::all_reduce(g1, world);
@@ -118,5 +116,7 @@ int main(int argc, char* argv[]) {
   out << g4.data() << std::endl;
  }
 
+ } 
+ TRIQS_CATCH_AND_ABORT;
 }
 

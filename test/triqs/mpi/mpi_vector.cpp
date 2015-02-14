@@ -18,13 +18,13 @@
  * TRIQS. If not, see <http://www.gnu.org/licenses/>.
  *
  ******************************************************************************/
-#include <iostream>
-#include <type_traits>
+#include <triqs/mpi/vector.hpp>
 #include <triqs/arrays.hpp>
+#include <iostream>
+//#include <type_traits>
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <triqs/mpi/vector.hpp>
 
 using namespace triqs;
 using namespace triqs::arrays;

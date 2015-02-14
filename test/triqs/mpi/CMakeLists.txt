@@ -1,3 +1,1 @@
-if (USE_CPP14)
- all_tests()
-endif()
+all_tests()

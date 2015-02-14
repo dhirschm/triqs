@@ -33,20 +33,20 @@ namespace mpi {
   static MPI_Datatype D() { return mpi_datatype<T>::invoke(); }
 
   // -----------
+  static void broadcast(communicator c, V &a, int root) {
+   size_t s = a.size();
+   mpi::broadcast(s, c, root);
+   if (c.rank() != root) a.resize(s);
+   MPI_Bcast(a.data(), a.size(), D(), root, c.get());
+  }
+
+  // -----------
   static void reduce_in_place(communicator c, V &a, int root) {
    MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : a.data()), a.data(), a.size(), D(), MPI_SUM, root, c.get());
   }
 
   static void all_reduce_in_place(communicator c, V &a, int root) {
    MPI_Allreduce(MPI_IN_PLACE, a.data(), a.size(), D(), MPI_SUM, c.get());
-  }
-
-  // -----------
-  static void broadcast(communicator c, V &a, int root) {
-   size_t s = a.size();
-   mpi::broadcast(s, c, root);
-   if (c.rank() != root) a.resize(s);
-   MPI_Bcast(a.data(), a.size(), D(), root, c.get());
   }
 
   // ------------
@@ -127,18 +127,14 @@ namespace mpi {
 
   using V = std::vector<T>;
 
-  static void reduce_in_place(communicator c, V &v, int root) {
-   for (auto &x : v) mpi::reduce_in_place(c, x, root);
-  }
-
-  static void all_reduce_in_place(communicator c, V &v, int root) {
-   for (auto &x : v) mpi::all_reduce_in_place(c, x, root);
-  }
-
   static void broadcast(communicator c, V &v, int root) {
    size_t s = mpi::broadcast(v.size());
    if (c.rank() != root) v.resize(s);
    for (auto &x : v) mpi::broadcast(c, x, root);
+  }
+
+  static void reduce_in_place(communicator c, V &v, int root, bool all) {
+   for (auto &x : v) mpi::reduce_in_place(c, x, root, all);
   }
 
   template <typename Tag> static mpi_lazy<Tag, V> invoke(Tag, communicator c, V const &g, int root) {

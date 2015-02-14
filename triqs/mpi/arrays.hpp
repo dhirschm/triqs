@@ -19,7 +19,6 @@
  *
  ******************************************************************************/
 #pragma once
-#include <triqs/arrays.hpp>
 #include "./base.hpp"
 
 namespace triqs {
@@ -75,17 +74,14 @@ namespace mpi {
   public:
 
   //---------
-  static void reduce_in_place(communicator c, A &a, int root) {
+  static void reduce_in_place(communicator c, A &a, int root, bool all) {
    check_is_contiguous(a);
    // assume arrays have the same size on all nodes...
-   MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : a), a.data_start(), a.domain().number_of_elements(), D(), MPI_SUM, root, c.get());
-  }
-
-  //---------
-  static void all_reduce_in_place(communicator c, A &a, int root) {
-   check_is_contiguous(a);
-   // assume arrays have the same size on all nodes...
-   MPI_Allreduce(MPI_IN_PLACE, a.data_start(), a.domain().number_of_elements(), D(), MPI_SUM, c.get());
+   if (!all)
+    MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : a.data_start()), a.data_start(), a.domain().number_of_elements(), D(), MPI_SUM, root,
+               c.get());
+   else
+    MPI_Allreduce(MPI_IN_PLACE, a.data_start(), a.domain().number_of_elements(), D(), MPI_SUM, c.get());
   }
 
   //---------

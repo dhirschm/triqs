@@ -19,7 +19,9 @@
  *
  ******************************************************************************/
 #pragma once
+#include <triqs/utility/is_complex.hpp>
 #include "./communicator.hpp"
+#include <complex>
 
 namespace triqs {
 namespace mpi {
@@ -37,14 +39,11 @@ namespace mpi {
  // The implementation of mpi ops for each type
  // To be specialized later
  template <typename T, typename Enable = void> struct mpi_impl {
-  // Reduces a on site
-  // static void reduce_in_place(communicator c, T &a, int root);
-
-  // Reduces with all_reduce a on site
-  // static void all_reduce_in_place(communicator c, T &a, int root);
-
   // Broadcast a
   // static void broadcast(communicator c, T &a, int root);
+
+  // Reduces a on site ( all -> all_reduce)
+  // static void reduce_in_place(communicator c, T &a, int root, bool all);
 
   // For all tags : return a T or a lazy object
   // Tag = reduce, all_reduce, scatter, gather, allgather
@@ -71,8 +70,8 @@ namespace mpi {
 
  // ----- functions that never return lazy object -------
 
- template <typename T> void reduce_in_place(T &x, communicator c = {}, int root = 0) { mpi_impl<T>::reduce_in_place(c, x, root); }
- template <typename T> void all_reduce_in_place(T &x, communicator c = {}, int root = 0) { mpi_impl<T>::all_reduce_in_place(c, x, root); }
+ template <typename T> void reduce_in_place(T &x, communicator c = {}, int root = 0) { mpi_impl<T>::reduce_in_place(c, x, root, false); }
+ template <typename T> void all_reduce_in_place(T &x, communicator c = {}, int root = 0) { mpi_impl<T>::reduce_in_place(c, x, root, true); }
  template <typename T> void broadcast(T &x, communicator c = {}, int root = 0) { mpi_impl<T>::broadcast(c, x, root); }
 
  // ----- functions that can return lazy object -------
@@ -80,11 +79,11 @@ namespace mpi {
  template <typename T>
  AUTO_DECL reduce(T const &x, communicator c = {}, int root = 0) RETURN(mpi_impl<T>::invoke(tag::reduce(), c, x, root));
  template <typename T>
+ AUTO_DECL all_reduce(T const &x, communicator c = {}, int root = 0) RETURN(mpi_impl<T>::invoke(tag::all_reduce(), c, x, root));
+ template <typename T>
  AUTO_DECL scatter(T const &x, communicator c = {}, int root = 0) RETURN(mpi_impl<T>::invoke(tag::scatter(), c, x, root));
  template <typename T>
  AUTO_DECL gather(T const &x, communicator c = {}, int root = 0) RETURN(mpi_impl<T>::invoke(tag::gather(), c, x, root));
- template <typename T>
- AUTO_DECL all_reduce(T const &x, communicator c = {}, int root = 0) RETURN(mpi_impl<T>::invoke(tag::all_reduce(), c, x, root));
  template <typename T>
  AUTO_DECL allgather(T const &x, communicator c = {}, int root = 0) RETURN(mpi_impl<T>::invoke(tag::allgather(), c, x, root));
 
@@ -102,7 +101,7 @@ namespace mpi {
   static MPI_Datatype invoke() { return MPI_TY; }                                                                                \
  };
  D(int, MPI_INT) D(long, MPI_LONG) D(double, MPI_DOUBLE) D(float, MPI_FLOAT) D(std::complex<double>, MPI_DOUBLE_COMPLEX);
- D(unsigned long, MPI_UNSIGNED_LONG); D(unsigned int, MPI_UNSIGNED);
+ D(unsigned long, MPI_UNSIGNED_LONG); D(unsigned int, MPI_UNSIGNED); D(unsigned long long, MPI_UNSIGNED_LONG_LONG);
 #undef D
 
  /** ------------------------------------------------------------
@@ -115,6 +114,16 @@ namespace mpi {
   static MPI_Datatype D() { return mpi_datatype<T>::invoke(); }
 
   public : 
+
+  static void broadcast(communicator c, T &a, int root) { MPI_Bcast(&a, 1, D(), root, c.get()); }
+
+  static void reduce_in_place(communicator c, T &a, int root, bool all) {
+   if (!all)
+    MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : &a), &a, 1, D(), MPI_SUM, root, c.get());
+   else
+    MPI_Allreduce(MPI_IN_PLACE, &a, 1, D(), MPI_SUM, c.get());
+  }
+
   static T invoke(tag::reduce, communicator c, T a, int root) {
    T b;
    MPI_Reduce(&a, &b, 1, D(), MPI_SUM, root, c.get());
@@ -126,16 +135,6 @@ namespace mpi {
    MPI_Allreduce(&a, &b, 1, D(), MPI_SUM, c.get());
    return b;
   }
-
-  static void reduce_in_place(communicator c, T &a, int root) {
-   MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : &a), &a, 1, D(), MPI_SUM, root, c.get());
-  }
-
-  static void all_reduce_in_place(communicator c, T &a, int root) {
-   MPI_Allreduce(MPI_IN_PLACE, &a, 1, D(), MPI_SUM, c.get());
-  }
-
-  static void broadcast(communicator c, T &a, int root) { MPI_Bcast(&a, 1, D(), root, c.get()); }
 
   template<typename Tag>
   static void invoke2(T &lhs, Tag, communicator c, T a, int root) { lhs = invoke(Tag(), c, a, root); }

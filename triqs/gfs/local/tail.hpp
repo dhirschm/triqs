@@ -22,7 +22,8 @@
 #include <triqs/arrays.hpp>
 #include <triqs/arrays/algorithms.hpp>
 #include <triqs/gfs/tools.hpp>
-#include <triqs/mpi/boost.hpp>
+//#include <triqs/mpi/boost.hpp>
+#include <triqs/mpi/generic.hpp>
 #include <boost/serialization/complex.hpp>
 
 namespace triqs {
@@ -65,7 +66,7 @@ namespace gfs {
  /// A common implementation class.
  template <rvc_enum RVC> class tail_impl {
   public:
-  TRIQS_MPI_IMPLEMENTED_VIA_BOOST;
+  TRIQS_MPI_AS_TUPLE;
   using view_type = tail_view;
   using const_view_type = tail_const_view;
   using regular_type = tail;
@@ -168,6 +169,12 @@ namespace gfs {
    ar &TRIQS_MAKE_NVP("mask", _mask);
    ar &TRIQS_MAKE_NVP("data", _data);
   }
+
+  // mpi operations
+  friend auto get_mpi_tuple(tail_impl const &x)
+      RETURN(std::make_tuple(std::ref(x._data), triqs::mpi::no_reduction(x.omin), triqs::mpi::no_reduction(x._mask)));
+  friend auto get_mpi_tuple(tail_impl &x)
+      RETURN(std::make_tuple(std::ref(x._data), triqs::mpi::no_reduction(x.omin), triqs::mpi::no_reduction(x._mask)));
  };
 
  // -----------------------------

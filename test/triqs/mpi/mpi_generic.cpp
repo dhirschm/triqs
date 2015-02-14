@@ -34,7 +34,7 @@ struct my_object {
 
  array<double, 1> a, b;
 
- TRIQS_MPI_IMPLEMENTED_AS_TUPLEVIEW;
+ TRIQS_MPI_AS_TUPLE;
 
  my_object() = default;
 
@@ -45,23 +45,22 @@ struct my_object {
  }
 
  // construction from the lazy is delegated to =
- template <typename Tag> my_object(mpi_lazy<Tag, my_object> x) : my_object() { operator=(x); }
+ //template <typename Tag> my_object(mpi_lazy<Tag, my_object> x) : my_object() { operator=(x); }
 
  // assigment is almost done already...
- template <typename Tag> my_object &operator=(mpi_lazy<Tag, my_object> x) {
-  return mpi_impl<my_object>::complete_operation(*this, x);
- }
+ //template <typename Tag> my_object &operator=(mpi_lazy<Tag, my_object> x) {
+ // return mpi_impl<my_object>::complete_operation(*this, x);
+// }
 };
 
 // non intrusive 
-auto view_as_tuple(my_object const &x) RETURN(std::tie(x.a, x.b));
-auto view_as_tuple(my_object &x) RETURN(std::tie(x.a, x.b));
+auto get_mpi_tuple(my_object const &x) RETURN(std::make_tuple(std::ref(x.a), triqs::mpi::no_reduction(x.b)));
+auto get_mpi_tuple(my_object &x)       RETURN(std::make_tuple(std::ref(x.a), triqs::mpi::no_reduction(x.b)));
 
 // --------------------------------------
 
 int main(int argc, char *argv[]) {
 
-#ifdef TRIQS_C11
  mpi::environment env(argc, argv);
  mpi::communicator world;
  
@@ -93,7 +92,13 @@ int main(int argc, char *argv[]) {
  out << " allgather a = " << ob.a << std::endl;
  out << " allgather b = " << ob.b << std::endl;
 
+ // reduce 
+ auto ob3 = ob; 
+ mpi::reduce_in_place(ob3);
+ out << " reduce a = " << ob3.a << std::endl;
+ out << " reduce b = " << ob3.b << std::endl;
+
+
  out << "----------------------------"<< std::endl;
-#endif
 }
 

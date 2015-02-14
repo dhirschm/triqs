@@ -22,50 +22,108 @@
 #include "./base.hpp"
 #include <triqs/utility/tuple_tools.hpp>
 
-#define TRIQS_MPI_IMPLEMENTED_AS_TUPLEVIEW using triqs_mpi_as_tuple = void;
-#define TRIQS_MPI_IMPLEMENTED_AS_TUPLEVIEW_NO_LAZY using triqs_mpi_as_tuple_no_lazy = void;
+#define TRIQS_MPI_AS_TUPLE using triqs_mpi_as_tuple = void;
+#define TRIQS_MPI_AS_TUPLE_LAZY using triqs_mpi_as_tuple_lazy = void;
 namespace triqs {
 namespace mpi {
+
+ template <typename T> struct __no_reduction {
+  T &x;
+ };
+ template <typename T> __no_reduction<T> no_reduction(T &x) {
+  return {x};
+ }
+
+ template <typename T> T &__strip(__no_reduction<T> x) { return x.x; }
+ template <typename T> T &__strip(T &x) { return x; }
+
+ struct __reduce_lambda {
+  communicator c;
+  int root, all;
+  template <typename U> void operator()(U &x) const { mpi_impl<U>::reduce_in_place(c, x, root, all); }
+  template <typename U> void operator()(__no_reduction<U>) const {}
+ };
+
+ struct __bcast_lambda {
+  communicator c;
+  int root;
+  template <typename U> void operator()(U &x) const { triqs::mpi::broadcast(__strip(x), c, root); }
+ };
+
+ template <typename Tag> struct __2_lambda {
+  communicator c;
+  int root;
+  template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const {
+   triqs::mpi::_invoke2(__strip(u1), Tag(), c, __strip(u2), root);
+  }
+ };
+
+ template <> struct __2_lambda<tag::reduce> {
+  communicator c;
+  int root;
+  template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const {
+   triqs::mpi::_invoke2(__strip(u1), tag::reduce(), c, __strip(u2), root);
+  }
+  template <typename U1, typename U2> void operator()(__no_reduction<U1> &u1, __no_reduction<U2> &u2) const {
+   //if (c.rank() == root)  // no, leads to a bug with tail ...
+   __strip(u1) = __strip(u2);
+  }
+ };
+
+ template <> struct __2_lambda<tag::all_reduce> {
+  communicator c;
+  int root;
+  template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const {
+   triqs::mpi::_invoke2(u1, tag::all_reduce(), c, u2, root);
+  }
+  template <typename U1, typename U2> void operator()(__no_reduction<U1> &u1, __no_reduction<U2> &u2) const {
+   __strip(u1) = __strip(u2);
+   triqs::mpi::broadcast(__strip(u1), c, root);
+  }
+ };
 
  /** ------------------------------------------------------------
   *  Type which are recursively treated by reducing them to a tuple
   *  of smaller objects.
   *  ----------------------------------------------------------  **/
- template <typename T, bool with_lazy> struct mpi_impl_tuple {
+ template <typename T> struct mpi_impl_tuple_lazy {
 
-  mpi_impl_tuple() = default;
-
-  /// invoke
-  template <typename Tag> static mpi_lazy<Tag, T> invoke_impl(std::true_type, Tag, communicator c, T const &a, int root) {
-   return {a, root, c};
-  }
-  
-  template <typename Tag> static T &invoke_impl(std::false_type, Tag, communicator c, T const &a, int root) {
-   return complete_operation(a, {a, root, c});
-  }
-
-  template <typename Tag> static mpi_lazy<Tag, T> invoke(Tag, communicator c, T const &a, int root) {
-   return invoke_impl(std::integral_constant<bool, with_lazy>(), Tag(), c, a, root);
-  }
-
-  static void reduce_in_place(communicator c, T &a, int root) {
-   tuple::for_each(view_as_tuple(a), [c, root](auto &x) { triqs::mpi::reduce_in_place(x, c, root); });
+  static void reduce_in_place(communicator c, T &a, int root, bool all) {
+   tuple::for_each(get_mpi_tuple(a), __reduce_lambda{c, root, all});
   }
 
   static void broadcast(communicator c, T &a, int root) {
-   tuple::for_each(view_as_tuple(a), [c, root](auto &x) { triqs::mpi::broadcast(x, c, root); });
+   tuple::for_each(get_mpi_tuple(a), __bcast_lambda{c, root});
   }
 
-  template <typename Tag> static T &complete_operation(T &target, mpi_lazy<Tag, T> laz) {
-   auto l = [laz](auto &t, auto &s) { t = triqs::mpi::mpi_impl<std::decay_t<decltype(s)>>::invoke(Tag(), laz.c, s, laz.root); };
-   triqs::tuple::for_each_zip(l, view_as_tuple(target), view_as_tuple(laz.ref));
-   return target;
+  template <typename Tag> static mpi_lazy<Tag, T> invoke(Tag, communicator c, T const &a, int root) {
+   return {a, root, c};
+  }
+
+  template <typename Tag> static void complete_operation(T &lhs, mpi_lazy<Tag, T> laz) {
+   invoke2(lhs, Tag(), laz.c, laz.ref, laz.root);
+  }
+
+  template <typename Tag> static void invoke2(T &target, Tag, communicator c, T const &x, int root) {
+   triqs::tuple::for_each_zip(__2_lambda<Tag>{c, root}, get_mpi_tuple(target), get_mpi_tuple(x));
+  }
+ };
+
+ // -----------------------------------------------------------
+
+ // no lazy, overrule the invoke.
+ template <typename T> struct mpi_impl_tuple : mpi_impl_tuple_lazy<T>  {
+
+  template <typename Tag> static T invoke(Tag, communicator c, T const &a, int root) {
+   T b = a;
+   mpi_impl_tuple_lazy<T>::invoke2(b, Tag(), c, a, root);
+   return b;
   }
  };
 
  // If type T has a mpi_implementation nested struct, then it is mpi_impl<T>.
- template <typename T> struct mpi_impl<T, typename T::triqs_mpi_as_tuple> : mpi_impl_tuple<T, true> {};
- template <typename T> struct mpi_impl<T, typename T::triqs_mpi_as_tuple_no_lazy> : mpi_impl_tuple<T, false> {};
+ template <typename T> struct mpi_impl<T, typename T::triqs_mpi_as_tuple_lazy> : mpi_impl_tuple_lazy<T> {};
+ template <typename T> struct mpi_impl<T, typename T::triqs_mpi_as_tuple> : mpi_impl_tuple<T> {};
 }
 } // namespace
 
