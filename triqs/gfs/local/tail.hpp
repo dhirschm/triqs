@@ -171,10 +171,10 @@ namespace gfs {
   }
 
   // mpi operations
-  friend auto get_mpi_tuple(tail_impl const &x)
-      RETURN(std::make_tuple(std::ref(x._data), triqs::mpi::no_reduction(x.omin), triqs::mpi::no_reduction(x._mask)));
-  friend auto get_mpi_tuple(tail_impl &x)
-      RETURN(std::make_tuple(std::ref(x._data), triqs::mpi::no_reduction(x.omin), triqs::mpi::no_reduction(x._mask)));
+  auto get_mpi_tuple() const
+      RETURN(std::make_tuple(std::ref(_data), triqs::mpi::no_reduction(omin), triqs::mpi::no_reduction(_mask)));
+  auto get_mpi_tuple()
+      RETURN(std::make_tuple(std::ref(_data), triqs::mpi::no_reduction(omin), triqs::mpi::no_reduction(_mask)));
  };
 
  // -----------------------------

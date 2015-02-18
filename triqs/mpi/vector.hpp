@@ -130,11 +130,11 @@ namespace mpi {
   static void broadcast(communicator c, V &v, int root) {
    size_t s = mpi::broadcast(v.size());
    if (c.rank() != root) v.resize(s);
-   for (auto &x : v) mpi::broadcast(c, x, root);
+   for (auto &x : v) mpi::broadcast(x, c, root);
   }
 
   static void reduce_in_place(communicator c, V &v, int root, bool all) {
-   for (auto &x : v) mpi::reduce_in_place(c, x, root, all);
+   for (auto &x : v) mpi::reduce_in_place(x, c, root, all);
   }
 
   template <typename Tag> static mpi_lazy<Tag, V> invoke(Tag, communicator c, V const &g, int root) {

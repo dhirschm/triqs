@@ -27,6 +27,8 @@
 namespace triqs {
 namespace mpi {
 
+ template <typename T> auto get_mpi_tuple(T&x) RETURN(x.get_mpi_tuple());
+
  template <typename T> struct __no_reduction {
   T &x;
  };

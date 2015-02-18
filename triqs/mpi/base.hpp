@@ -70,8 +70,12 @@ namespace mpi {
 
  // ----- functions that never return lazy object -------
 
- template <typename T> void reduce_in_place(T &x, communicator c = {}, int root = 0) { mpi_impl<T>::reduce_in_place(c, x, root, false); }
- template <typename T> void all_reduce_in_place(T &x, communicator c = {}, int root = 0) { mpi_impl<T>::reduce_in_place(c, x, root, true); }
+ template <typename T> void reduce_in_place(T &x, communicator c = {}, int root = 0, bool all = false) {
+  mpi_impl<T>::reduce_in_place(c, x, root, all);
+ }
+ template <typename T> void all_reduce_in_place(T &x, communicator c = {}, int root = 0) {
+  mpi_impl<T>::reduce_in_place(c, x, root, true);
+ }
  template <typename T> void broadcast(T &x, communicator c = {}, int root = 0) { mpi_impl<T>::broadcast(c, x, root); }
 
  // ----- functions that can return lazy object -------

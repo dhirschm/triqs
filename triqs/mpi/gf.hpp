@@ -34,14 +34,14 @@ namespace mpi {
   //---------
   static void broadcast(communicator c, G &g, int root) {
    // Shall we bcast mesh ?
-   triqs::mpi::broadcast(c, g.data(), root);
-   triqs::mpi::broadcast(c, g.singularity(), root);
+   triqs::mpi::broadcast(g.data(), c, root);
+   triqs::mpi::broadcast(g.singularity(), c, root);
   }
 
   //---------
   static void reduce_in_place(communicator c, G &g, int root, bool all) {
-   triqs::mpi::reduce_in_place(c, g.data(), root, all);
-   triqs::mpi::reduce_in_place(c, g.singularity(), root, all);
+   triqs::mpi::reduce_in_place(g.data(), c, root, all);
+   triqs::mpi::reduce_in_place(g.singularity(), c, root, all);
   }
 
   //---------
@@ -97,7 +97,7 @@ namespace mpi {
  template <> struct mpi_impl<gfs::nothing> {
   template <typename Tag> static void invoke2(gfs::nothing &lhs, Tag, communicator c, gfs::nothing const &a, int root) {}
   template <typename Tag> static gfs::nothing invoke(Tag, communicator c, gfs::nothing const &a, int root) { return gfs::nothing(); }
-  static void reduce_in_place(communicator c, gfs::nothing &a, int root) {}
+  static void reduce_in_place(communicator c, gfs::nothing &a, int root, bool all) {}
   static void broadcast(communicator c, gfs::nothing &a, int root) {}
  };
 
