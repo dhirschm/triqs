@@ -32,62 +32,48 @@ namespace mpi {
  template <typename G> struct mpi_impl_triqs_gfs {
 
   //---------
-  static void broadcast(communicator c, G &g, int root) {
+  static void broadcast(G &g, communicator c, int root) {
    // Shall we bcast mesh ?
    triqs::mpi::broadcast(g.data(), c, root);
    triqs::mpi::broadcast(g.singularity(), c, root);
   }
 
   //---------
-  static void reduce_in_place(communicator c, G &g, int root, bool all) {
-   triqs::mpi::reduce_in_place(g.data(), c, root, all);
-   triqs::mpi::reduce_in_place(g.singularity(), c, root, all);
-  }
-
-  //---------
-  template <typename Tag> static mpi_lazy<Tag, G> invoke(Tag, communicator c, G const &g, int root) {
+  template <typename Tag> static mpi_lazy<Tag, G> invoke(Tag, G const &g, communicator c, int root) {
    return {g, root, c};
   }
 
   //---------
+  // REMOVE : change gf
   template <typename Tag> static void complete_operation(G &lhs, mpi_lazy<Tag, G> laz) {
    _assign(lhs, Tag(), laz.c, laz.ref, laz.root);
   }
 
-  //---- reduce ----
-  static void _assign(G &lhs, tag::reduce, communicator c, G const &g, int root) {
-   lhs._mesh = g._mesh;
-   mpi::_assign(lhs._data, tag::reduce(), c, g.data(), root);
-   mpi::_assign(lhs._singularity, tag::reduce(), c, g.singularity(), root);
+  static void complete_operation(...) { // impl pour les  tags
   }
 
-  //---- all_reduce ----
-  static void _assign(G &lhs, tag::all_reduce, communicator c, G const &g, int root) {
+  static void reduce(...) ;
+  
+  //---- reduce ----
+  static void _assign(G &lhs, tag::reduce, G const &g, communicator c, int root, bool all) {
    lhs._mesh = g._mesh;
-   mpi::_assign(lhs._data, tag::all_reduce(), c, g.data(), root);
-   mpi::_assign(lhs._singularity, tag::all_reduce(), c, g.singularity(), root);
+   mpi::_assign(lhs._data, tag::reduce(), c, g.data(), root, all);
+   mpi::_assign(lhs._singularity, tag::reduce(), c, g.singularity(), root, all);
   }
 
   //---- scatter ----
-  static void _assign(G &lhs, tag::scatter, communicator c, G const &g, int root) {
+  static void _assign(G &lhs, tag::scatter, G const &g, communicator c, int root, bool) {
    lhs._mesh = mpi_scatter(g.mesh(), c, root);
-   mpi::_assign(lhs._data, tag::scatter(), c, g.data(), root);
+   mpi::_assign(lhs._data, tag::scatter(), c, g.data(), root, true);
    if (c.rank() == root) lhs._singularity = g.singularity();
    mpi::broadcast(lhs._singularity, c, root);
   }
 
   //---- gather ----
-  static void _assign(G &lhs, tag::gather, communicator c, G const &g, int root) {
+  static void _assign(G &lhs, tag::gather, G const &g, communicator c, int root, bool all) {
    lhs._mesh = mpi_gather(g.mesh(), c, root);
-   mpi::_assign(lhs._data, tag::gather(), c, g.data(), root);
-   if (c.rank() == root) lhs._singularity = g.singularity();
-  }
-
-  //---- allgather ----
-  static void _assign(G &lhs, tag::allgather, communicator c, G const &g, int root) {
-   lhs._mesh = mpi_gather(g.mesh(), c, root);
-   mpi::_assign(lhs._data, tag::allgather(), c, g.data(), root);
-   lhs._singularity = g.singularity();
+   mpi::_assign(lhs._data, tag::gather(), c, g.data(), root, all);
+   if (all || (c.rank() == root)) lhs._singularity = g.singularity();
   }
  };
 
@@ -97,7 +83,6 @@ namespace mpi {
  template <> struct mpi_impl<gfs::nothing> {
   template <typename Tag> static void _assign(gfs::nothing &lhs, Tag, communicator c, gfs::nothing const &a, int root) {}
   template <typename Tag> static gfs::nothing invoke(Tag, communicator c, gfs::nothing const &a, int root) { return gfs::nothing(); }
-  static void reduce_in_place(communicator c, gfs::nothing &a, int root, bool all) {}
   static void broadcast(communicator c, gfs::nothing &a, int root) {}
  };
 

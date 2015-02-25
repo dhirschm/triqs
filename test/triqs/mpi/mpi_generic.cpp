@@ -49,13 +49,34 @@ struct my_object {
 
  // assigment is almost done already...
  //template <typename Tag> my_object &operator=(mpi_lazy<Tag, my_object> x) {
- // return mpi_impl<my_object>::complete_operation(*this, x);
+ // return mpi_impl<my_object>::assign(*this, x);
 // }
+
+ template<typename Archive> 
+  void serialize(Archive & A, const unsigned version) { 
+   A & a & b;
+  }
+
+ // si la structure existe, alors c'est le default, avec void_t
+ struct mpi_impl {
+  TRIQS_MPI_TRANSMIT_VIA_SERIALIZE; // TOUJOUR SVRAI
+  TRIQS_MPI_LAZY; // implemente complete_op, etc...
+
+// 1 struct qui implemente reduce, gather, scatter 
+// et un static bool lazy  
+// Then rebuild mpi_impl
+  static void reduce(G &lhs, G const &rhs, communicator c, int root, bool all) {
+   lhs.a = mpi::reduce(rhs.a, c, root, all);
+   lhs.b = rhs.b; // master only ?
+  }
+
+ };
+
 };
 
 // non intrusive 
-auto get_mpi_tuple(my_object const &x) RETURN(std::make_tuple(std::ref(x.a), triqs::mpi::no_reduction(x.b)));
-auto get_mpi_tuple(my_object &x)       RETURN(std::make_tuple(std::ref(x.a), triqs::mpi::no_reduction(x.b)));
+auto get_mpi_tuple_reduction(my_object const &x) RETURN(std::make_tuple(std::ref(x.a)));
+auto get_mpi_tuple_reduction(my_object &x)       RETURN(std::make_tuple(std::ref(x.a)));
 
 // --------------------------------------
 

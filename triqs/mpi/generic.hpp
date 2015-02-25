@@ -29,46 +29,39 @@ namespace mpi {
 
  template <typename T> auto get_mpi_tuple(T&x) RETURN(x.get_mpi_tuple());
 
- template <typename T> struct __no_reduction {
-  T &x;
- };
- template <typename T> __no_reduction<T> no_reduction(T &x) {
-  return {x};
- }
-
- template <typename T> T &__strip(__no_reduction<T> x) { return x.x; }
- template <typename T> T &__strip(T &x) { return x; }
-
  struct __reduce_lambda {
   communicator c;
   int root, all;
   template <typename U> void operator()(U &x) const { mpi_impl<U>::reduce_in_place(c, x, root, all); }
-  template <typename U> void operator()(__no_reduction<U>) const {}
  };
+
+ template <typename F> struct lambda_to_archive {
+  F f;
+  template <typename T> lambda_to_archive &operator&(T &x) const { f(x); return *this; }
+ };
+ template <typename F> lambda_to_archive<F> make_lambda_to_archive(F &&f) { return std::forward<F>(f); }
 
  struct __bcast_lambda {
   communicator c;
   int root;
-  template <typename U> void operator()(U &x) const { triqs::mpi::broadcast(__strip(x), c, root); }
+  template <typename U> void operator()(U &x) const { triqs::mpi::broadcast(x, c, root); }
  };
 
  template <typename Tag> struct __2_lambda {
   communicator c;
   int root;
-  template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const {
-   triqs::mpi::_assign(__strip(u1), Tag(), c, __strip(u2), root);
-  }
+  template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const { triqs::mpi::_assign(u1, Tag(), c, u2, root); }
  };
 
  template <> struct __2_lambda<tag::reduce> {
   communicator c;
   int root;
   template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const {
-   triqs::mpi::_assign(__strip(u1), tag::reduce(), c, __strip(u2), root);
+   triqs::mpi::_assign(u1, tag::reduce(), c, u2, root);
   }
   template <typename U1, typename U2> void operator()(__no_reduction<U1> &u1, __no_reduction<U2> &u2) const {
    //if (c.rank() == root)  // no, leads to a bug with tail ...
-   __strip(u1) = __strip(u2);
+   u1 = u2;
   }
  };
 
@@ -79,8 +72,17 @@ namespace mpi {
    triqs::mpi::_assign(u1, tag::all_reduce(), c, u2, root);
   }
   template <typename U1, typename U2> void operator()(__no_reduction<U1> &u1, __no_reduction<U2> &u2) const {
-   __strip(u1) = __strip(u2);
+   u1 = u2;
    triqs::mpi::broadcast(__strip(u1), c, root);
+  }
+ };
+
+ // to allow to access the data...
+ struct access { 
+  template<typename T>
+  static void broadcast(communicator c, T &a, int root) {
+   auto f = make_lambda_to_archive(__bcast_lambda{c,root});
+   a.serialize(f,0);
   }
  };
 
@@ -88,14 +90,10 @@ namespace mpi {
   *  Type which are recursively treated by reducing them to a tuple
   *  of smaller objects.
   *  ----------------------------------------------------------  **/
- template <typename T> struct mpi_impl_tuple_lazy {
+ template <typename T> struct mpi_impl_tuple_lazy : access {
 
   static void reduce_in_place(communicator c, T &a, int root, bool all) {
-   tuple::for_each(get_mpi_tuple(a), __reduce_lambda{c, root, all});
-  }
-
-  static void broadcast(communicator c, T &a, int root) {
-   tuple::for_each(get_mpi_tuple(a), __bcast_lambda{c, root});
+   tuple::for_each(get_mpi_tuple_reduction(a), __reduce_lambda{c, root, all});
   }
 
   template <typename Tag> static mpi_lazy<Tag, T> invoke(Tag, communicator c, T const &a, int root) {
@@ -107,7 +105,7 @@ namespace mpi {
   }
 
   template <typename Tag> static void _assign(T &target, Tag, communicator c, T const &x, int root) {
-   triqs::tuple::for_each_zip(__2_lambda<Tag>{c, root}, get_mpi_tuple(target), get_mpi_tuple(x));
+   triqs::tuple::for_each_zip(__2_lambda<Tag>{c, root}, get_mpi_tuple_reduction(target), get_mpi_tuple_reduction(x));
   }
  };
 

@@ -29,8 +29,9 @@ namespace mpi {
  // Differs from the generic one in that it can make a domain of the (target) array
  template <typename Tag, typename A> struct mpi_lazy_array {
   A const &ref;
-  int root;
   communicator c;
+  int root;
+  bool all;
 
   using domain_type = typename A::domain_type;
 
@@ -38,26 +39,22 @@ namespace mpi {
   domain_type domain() const {
    auto dims = ref.shape();
    long slow_size = first_dim(ref);
-
-   // tag::reduce and all_reduce : do nothing
  
    if (std::is_same<Tag, tag::scatter>::value) {
     mpi::broadcast(slow_size, c, root);
     dims[0] = mpi::slice_length(slow_size - 1, c.size(), c.rank());
    }
-   
+
    if (std::is_same<Tag, tag::gather>::value) {
-    auto s = mpi::reduce(slow_size, c, root); 
-    dims[0] = (c.rank()==root ? s : 1); // valid only on root
+    if (!all)
+     dims[0] = (c.rank() == mpi::reduce(slow_size, c, root) ? s : 1); // valid only on root
+    else
+     dims[0] = mpi::all_reduce(slow_size, c, root); // in this case, it is valid on all nodes
    }
-   
-   if (std::is_same<Tag, tag::allgather>::value) {
-    dims[0] = mpi::all_reduce(slow_size, c, root); // in this case, it is valid on all nodes
-   }
-   
+   // tag::reduce :do nothing
+
    return domain_type{dims};
   }
-
  };
 
  //--------------------------------------------------------------------------------------------------------
@@ -65,27 +62,15 @@ namespace mpi {
  // When value_type is a basic type, we can directly call the C API
  template <typename A> class mpi_impl_triqs_arrays {
 
-  static MPI_Datatype D() { return mpi_datatype<typename A::value_type>::invoke(); }
+  static MPI_Datatype D() { return mpi_datatype<typename A::value_type>(); }
 
   static void check_is_contiguous(A const &a) {
    if (!has_contiguous_data(a)) TRIQS_RUNTIME_ERROR << "Non contiguous view in mpi_reduce_in_place";
   }
 
   public:
-
   //---------
-  static void reduce_in_place(communicator c, A &a, int root, bool all) {
-   check_is_contiguous(a);
-   // assume arrays have the same size on all nodes...
-   if (!all)
-    MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : a.data_start()), a.data_start(), a.domain().number_of_elements(), D(), MPI_SUM, root,
-               c.get());
-   else
-    MPI_Allreduce(MPI_IN_PLACE, a.data_start(), a.domain().number_of_elements(), D(), MPI_SUM, c.get());
-  }
-
-  //---------
-  static void broadcast(communicator c, A &a, int root) {
+  static void broadcast(A &a, communicator c, int root) {
    check_is_contiguous(a);
    auto sh = a.shape();
    MPI_Bcast(&sh[0], sh.size(), mpi_datatype<typename decltype(sh)::value_type>::invoke(), root, c.get());
@@ -94,15 +79,14 @@ namespace mpi {
   }
 
   //---------
-  template <typename Tag> static mpi_lazy_array<Tag, A> invoke(Tag, communicator c, A const &a, int root) {
+  template <typename Tag> static mpi_lazy_array<Tag, A> invoke(Tag, A const &a, communicator c, int root, bool all) {
    check_is_contiguous(a);
-   return {a, root, c};
+   return {a, c, root, all};
   }
 
-  template <typename Tag> static void _assign(A & lhs, Tag, communicator c, A const &a, int root) {
-   lhs = invoke(Tag(), c, a, root);
+  template <typename Tag> static void _assign(A &lhs, Tag, A const &a, communicator c, int root) {
+   lhs = invoke(Tag(), a, c, root);
   }
-
  };
 
  template <typename A>
@@ -133,19 +117,40 @@ namespace arrays {
    void invoke() { _invoke(Tag()); }
 
    private:
-   static MPI_Datatype D() { return mpi::mpi_datatype<typename A::value_type>::invoke(); }
+   static MPI_Datatype D() { return mpi::mpi_datatype<typename A::value_type>(); }
 
    //---------------------------------
    void _invoke(triqs::mpi::tag::reduce) {
-    if (laz.c.rank() == laz.root) lhs.resize(laz.domain());
-    MPI_Reduce((void *)laz.ref.data_start(), (void *)lhs.data_start(), laz.ref.domain().number_of_elements(), D(), MPI_SUM, laz.root, laz.c.get());
-   }
 
-   //---------------------------------
-   void _invoke(triqs::mpi::tag::all_reduce) {
-    // ADD debug check under macro that all nodes have same size
-    lhs.resize(laz.domain());
-    MPI_Allreduce((void *)laz.ref.data_start(), (void *)lhs.data_start(), laz.ref.domain().number_of_elements(), D(), MPI_SUM, laz.c.get());
+    auto rhs_n_elem = laz.ref.domain().number_of_elements();
+    void *lhs_p = lhs.data_start();
+    void *rhs_p = laz.ref.data_start();
+
+    bool in_place = (lhs_p == rhs_p); // to be refined. Overlapping condition
+    // some checks.
+    if (in_place) {
+     if (rhs_n_elem != lhs.domain().number_of_elements())
+      TRIQS_RUNTIME_ERROR << "mpi reduce of array : same pointer to data start, but differnet number of elements !";
+    } else { // check no overlap
+     if (std::abs(lhs.data_start() - laz.ref.data_start()) <= rhs_n_elem)
+      TRIQS_RUNTIME_ERROR << "mpi reduce of array : overlapping arrays !";
+    }
+
+    if (!laz.all) {
+     if (in_place)
+      MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : rhs_p), rhs_p, rhs_n_elem, D(), MPI_SUM, root, c.get());
+     else {
+      if (laz.c.rank() == laz.root) lhs.resize(laz.domain());
+      MPI_Reduce(rhs_p, lhs_p, rhs_n_elem, D(), MPI_SUM, laz.root, laz.c.get());
+     }
+    } else { // all reduce
+     if (in_place)
+      MPI_Allreduce(MPI_IN_PLACE, rhs_p, rhs_n_elem, D(), MPI_SUM, c.get());
+     else {
+      lhs.resize(laz.domain());
+      MPI_Allreduce(rhs_p, lhs_p, rhs_n_elem, D(), MPI_SUM, laz.c.get());
+     }
+    }
    }
 
    //---------------------------------
@@ -170,39 +175,29 @@ namespace arrays {
 
    //---------------------------------
    void _invoke(triqs::mpi::tag::gather) {
-    auto d = laz.domain();
-    if (laz.c.rank() == laz.root) lhs.resize(d);
-
-    auto c = laz.c;
+    auto c = laz.c.get();
     auto recvcounts = std::vector<int>(c.size());
     auto displs = std::vector<int>(c.size() + 1, 0);
     int sendcount = laz.ref.domain().number_of_elements();
+    void *lhs_p = lhs.data_start();
+    void *rhs_p = laz.ref.data_start();
 
-    auto mpi_ty = mpi::mpi_datatype<int>::invoke();
-    MPI_Gather(&sendcount, 1, mpi_ty, &recvcounts[0], 1, mpi_ty, laz.root, c.get());
+    if (laz.all || (laz.c.rank() == laz.root)) lhs.resize(laz.domain());
+
+    auto mpi_ty = mpi::mpi_datatype<int>();
+    if (!laz.all)
+     MPI_Gather(&sendcount, 1, mpi_ty, &recvcounts[0], 1, mpi_ty, laz.root, c);
+    else
+     MPI_Allgather(&sendcount, 1, mpi_ty, &recvcounts[0], 1, mpi_ty, c);
+
     for (int r = 0; r < c.size(); ++r) displs[r + 1] = recvcounts[r] + displs[r];
 
-    MPI_Gatherv((void *)laz.ref.data_start(), sendcount, D(), (void *)lhs.data_start(), &recvcounts[0], &displs[0], D(), laz.root,
-                c.get());
+    if (!laz.all)
+     MPI_Gatherv(rhs_p, sendcount, D(), lhs_p, &recvcounts[0], &displs[0], D(), laz.root, c);
+    else
+     MPI_Allgatherv(rhs_p, sendcount, D(), lhs_p, &recvcounts[0], &displs[0], D(), c);
    }
 
-   //---------------------------------
-   void _invoke(triqs::mpi::tag::allgather) {
-    lhs.resize(laz.domain());
-
-    // almost the same preparation as gather, except that the recvcounts are ALL gathered...
-    auto c = laz.c;
-    auto recvcounts = std::vector<int>(c.size());
-    auto displs = std::vector<int>(c.size() + 1, 0);
-    int sendcount = laz.ref.domain().number_of_elements();
-
-    auto mpi_ty = mpi::mpi_datatype<int>::invoke();
-    MPI_Allgather(&sendcount, 1, mpi_ty, &recvcounts[0], 1, mpi_ty, c.get());
-    for (int r = 0; r < c.size(); ++r) displs[r + 1] = recvcounts[r] + displs[r];
-
-    MPI_Allgatherv((void *)laz.ref.data_start(), sendcount, D(), (void *)lhs.data_start(), &recvcounts[0], &displs[0], D(),
-                   c.get());
-   }
   };
  }
 } //namespace arrays

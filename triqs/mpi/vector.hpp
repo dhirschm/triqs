@@ -30,10 +30,10 @@ namespace mpi {
 
   using V = std::vector<T>;
 
-  static MPI_Datatype D() { return mpi_datatype<T>::invoke(); }
+  static MPI_Datatype D() { return mpi_datatype<T>(); }
 
   // -----------
-  static void broadcast(communicator c, V &a, int root) {
+  static void broadcast(V &a, communicator c, int root) {
    size_t s = a.size();
    mpi::broadcast(s, c, root);
    if (c.rank() != root) a.resize(s);
@@ -41,35 +41,31 @@ namespace mpi {
   }
 
   // -----------
-  static void reduce_in_place(communicator c, V &a, int root) {
-   MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : a.data()), a.data(), a.size(), D(), MPI_SUM, root, c.get());
-  }
-
-  static void all_reduce_in_place(communicator c, V &a, int root) {
-   MPI_Allreduce(MPI_IN_PLACE, a.data(), a.size(), D(), MPI_SUM, c.get());
-  }
+  /* static void reduce_in_place(V &a, communicator c, int root, all) {
+    if (!all)
+     MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : a.data()), a.data(), a.size(), D(), MPI_SUM, root, c.get());
+    else
+     MPI_Allreduce(MPI_IN_PLACE, a.data(), a.size(), D(), MPI_SUM, c.get());
+   }
+ */
 
   // ------------
-  //template <typename Tag> static void invoke2(V &lhs, Tag, communicator c, V const &a, int root) {
+  // template <typename Tag> static void invoke2(V &lhs, Tag, communicator c, V const &a, int root) {
   // lhs = invoke(Tag(), c, a, root);
- // }
+  // }
 
   // -----------
-  static V invoke(tag::reduce, communicator c, V const &a, int root) {
+  static V invoke(tag::reduce, communicator c, V const &a, int root, bool all) {
    V b(a.size());
-   MPI_Reduce(a.data(), b.data(), a.size(), D(), MPI_SUM, root, c.get());
+   if (!all)
+    MPI_Reduce(a.data(), b.data(), a.size(), D(), MPI_SUM, root, c.get());
+   else
+    MPI_Allreduce(a.data(), b.data(), a.size(), D(), MPI_SUM, root, c.get());
    return b;
   }
 
   // -----------
-  static V invoke(tag::all_reduce, communicator c, V const &a, int root) {
-   V b(a.size());
-   MPI_Allreduce(a.data(), b.data(), a.size(), D(), MPI_SUM, root, c.get());
-   return b;
-  }
-
-  // -----------
-  static V invoke(tag::scatter, communicator c, V const &a, int root) {
+  static V invoke(tag::scatter, V const &a, communicator c, int root, bool) {
 
    auto slow_size = a.size();
    auto sendcounts = std::vector<int>(c.size());
@@ -87,35 +83,26 @@ namespace mpi {
   }
 
   // -----------
-  static V invoke(tag::gather, communicator c, V const &a, int root) {
-   long size = mpi::reduce(a.size(), c, root);
-   V b((c.rank() == root ? size : 0));
+  static V invoke(tag::gather, V const &a, communicator c, int root, bool all) {
+   long size = mpi::reduce(a.size(), c, root, all);
+   V b((all || (c.rank() == root) ? size : 0));
 
    auto recvcounts = std::vector<int>(c.size());
    auto displs = std::vector<int>(c.size() + 1, 0);
    int sendcount = a.size();
-   auto mpi_ty = mpi::mpi_datatype<int>::invoke();
-   MPI_Gather(&sendcount, 1, mpi_ty, &recvcounts[0], 1, mpi_ty, root, c.get());
+   auto mpi_ty = mpi::mpi_datatype<int>();
+   if (!all)
+    MPI_Gather(&sendcount, 1, mpi_ty, &recvcounts[0], 1, mpi_ty, root, c.get());
+   else
+    MPI_Allgather(&sendcount, 1, mpi_ty, &recvcounts[0], 1, mpi_ty, c.get());
+
    for (int r = 0; r < c.size(); ++r) displs[r + 1] = recvcounts[r] + displs[r];
 
-   MPI_Gatherv((void *)a.data(), sendcount, D(), (void *)b.data(), &recvcounts[0], &displs[0], D(), root, c.get());
-   return b;
-  }
+   if (!all)
+    MPI_Gatherv((void *)a.data(), sendcount, D(), (void *)b.data(), &recvcounts[0], &displs[0], D(), root, c.get());
+   else
+    MPI_Allgatherv((void *)a.data(), sendcount, D(), (void *)b.data(), &recvcounts[0], &displs[0], D(), c.get());
 
-  // -----------
-
-  static V invoke(tag::allgather, communicator c, V const &a, int root) {
-   long size = all_reduce(a.size(), c, root);
-   V b(size);
-
-   auto recvcounts = std::vector<int>(c.size());
-   auto displs = std::vector<int>(c.size() + 1, 0);
-   int sendcount = a.size();
-   auto mpi_ty = mpi::mpi_datatype<int>::invoke();
-   MPI_Allgather(&sendcount, 1, mpi_ty, &recvcounts[0], 1, mpi_ty, c.get());
-   for (int r = 0; r < c.size(); ++r) displs[r + 1] = recvcounts[r] + displs[r];
-
-   MPI_Allgatherv((void *)a.data(), sendcount, D(), (void *)b.data(), &recvcounts[0], &displs[0], D(), c.get());
    return b;
   }
  };
@@ -127,25 +114,25 @@ namespace mpi {
 
   using V = std::vector<T>;
 
-  static void broadcast(communicator c, V &v, int root) {
+  static void broadcast(V &v, communicator c, int root) {
    size_t s = mpi::broadcast(v.size());
    if (c.rank() != root) v.resize(s);
    for (auto &x : v) mpi::broadcast(x, c, root);
   }
 
-  static void reduce_in_place(communicator c, V &v, int root, bool all) {
-   for (auto &x : v) mpi::reduce_in_place(x, c, root, all);
-  }
+  //static void reduce_in_place(V &v, communicator c, int root, bool all) {
+  // for (auto &x : v) mpi::reduce_in_place(x, c, root, all);
+  //}
 
-  template <typename Tag> static mpi_lazy<Tag, V> invoke(Tag, communicator c, V const &g, int root) {
-   return {g, root, c};
+  template <typename Tag> static mpi_lazy<Tag, V> invoke(Tag, V const &g, communicator c, int root, bool all) {
+   return {g, c, root, all};
   }
 
   template <typename Tag> static void complete_operation(V &lhs, mpi_lazy<Tag, V> laz) {
-   invoke2(lhs, Tag(), laz.c, laz.ref, laz.root);
+   _assign(lhs, Tag(), laz.c, laz.ref, laz.root);
   }
 
-  template <typename Tag> static void _assign(V &lhs, Tag, communicator c, V const &a, int root) {
+  template <typename Tag> static void _assign(V &lhs, Tag, V const &a, communicator c, int root) {
    int s = a.size();
    lhs.resize(s);
    for (auto i = 0; i < s; ++i) mpi::_assign(lhs[i], Tag(), c, a[i], root);
