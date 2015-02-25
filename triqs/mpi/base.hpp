@@ -40,19 +40,19 @@ namespace mpi {
  // To be specialized later
  template <typename T, typename Enable = void> struct mpi_impl {
   // Broadcast a
-  // static void broadcast(communicator c, T &a, int root);
+  // static void broadcast(T &a, communicator c, int root);
 
   // Reduces a on site ( all -> all_reduce)
-  // static void reduce_in_place(communicator c, T &a, int root, bool all);
+  // static void reduce_in_place(T &a, communicator c, int root, bool all);
 
   // For all tags : return a T or a lazy object
   // Tag = reduce, all_reduce, scatter, gather, allgather
   // template<typename Tag>
-  // static auto invoke(Tag, communicator c, T const &a, int root);
+  // static auto invoke(Tag, T const &a, communicator c, int root);
 
-  // invoke2 (lhs, Tag, c, a, root) is the same as lhs = invoke(Tag, c, a, root);
+  // _assign (lhs, Tag, c, a, root) is the same as lhs = invoke(Tag, c, a, root);
   // it implements the operation
-  // template <typename Tag> static void invoke2(T &lhs, Tag, communicator c, T const &a, int root);
+  // template <typename Tag> static void _assign(T &lhs, Tag, T const &a, communicator c, int root);
  };
 
  // -----------------------------
@@ -80,6 +80,7 @@ namespace mpi {
 
  // ----- functions that can return lazy object -------
 
+ // ALL_rED, ALLGAT !!
  template <typename T>
  AUTO_DECL reduce(T const &x, communicator c = {}, int root = 0) RETURN(mpi_impl<T>::invoke(tag::reduce(), c, x, root));
  template <typename T>
@@ -91,9 +92,13 @@ namespace mpi {
  template <typename T>
  AUTO_DECL allgather(T const &x, communicator c = {}, int root = 0) RETURN(mpi_impl<T>::invoke(tag::allgather(), c, x, root));
 
- // impl. detail : internal use only, to deduce T
- template <typename T, typename Tag>
- AUTO_DECL _invoke2(T &lhs, Tag, communicator c, T const &rhs,  int root) RETURN(mpi_impl<T>::invoke2(lhs, Tag(), c, rhs, root));
+ //// impl. detail : internal use only, to deduce T
+ // compile time choice : does mpi_impl<T> has a tag has_special_assign 
+ template <typename T, typename Tag> void _assign(T &lhs, Tag, communicator c, T const &rhs, int root) {
+   mpi_impl<T>::_assign(lhs, Tag(), c,  rhs, root);
+ }
+
+
 
  /** ------------------------------------------------------------
    *  transformation type -> mpi types
@@ -140,9 +145,9 @@ namespace mpi {
    return b;
   }
 
-  template<typename Tag>
-  static void invoke2(T &lhs, Tag, communicator c, T a, int root) { lhs = invoke(Tag(), c, a, root); }
-
+ template<typename Tag>
+  static void _assign(T &lhs, Tag, communicator c, T a, int root) { lhs = invoke(Tag(), c, a, root); }
+  
  };
 
  // mpl_impl_basic is the mpi_impl<T> is T is a number (including complex)

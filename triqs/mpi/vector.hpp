@@ -50,9 +50,9 @@ namespace mpi {
   }
 
   // ------------
-  template <typename Tag> static void invoke2(V &lhs, Tag, communicator c, V const &a, int root) {
-   lhs = invoke(Tag(), c, a, root);
-  }
+  //template <typename Tag> static void invoke2(V &lhs, Tag, communicator c, V const &a, int root) {
+  // lhs = invoke(Tag(), c, a, root);
+ // }
 
   // -----------
   static V invoke(tag::reduce, communicator c, V const &a, int root) {
@@ -145,10 +145,10 @@ namespace mpi {
    invoke2(lhs, Tag(), laz.c, laz.ref, laz.root);
   }
 
-  template <typename Tag> static void invoke2(V &lhs, Tag, communicator c, V const &a, int root) {
+  template <typename Tag> static void _assign(V &lhs, Tag, communicator c, V const &a, int root) {
    int s = a.size();
    lhs.resize(s);
-   for (auto i = 0; i < s; ++i) mpi::_invoke2(lhs[i], Tag(), c, a[i], root);
+   for (auto i = 0; i < s; ++i) mpi::_assign(lhs[i], Tag(), c, a[i], root);
   }
  };
 

@@ -31,20 +31,27 @@ namespace mpi {
 namespace triqs {
 namespace mpi {
 
- /// Environment
- struct environment {
-  // MPICH does not allow Init without argc, argv, so we do not allow default constructors
-  // for portability, cf #133
-  environment(int argc, char *argv[]) { MPI_Init(&argc, &argv); }
-  ~environment() { MPI_Finalize(); }
- };
-
  // 
  inline bool is_initialized() noexcept { 
   int flag;
   MPI_Initialized(&flag);
   return flag;
  }
+
+ // ------------------------------------------------------------
+
+ /// Environment
+ struct environment {
+
+ // MPICH does not allow Init without argc, argv, so we do not allow default constructors
+  // for portability, cf #133
+  environment(int argc, char *argv[]) {
+   if (!is_initialized()) MPI_Init(&argc, &argv);
+  }
+  ~environment() { MPI_Finalize(); }
+ };
+
+ // ------------------------------------------------------------
 
  /// The communicator. Todo : add more constructors.
  class communicator {
@@ -55,9 +62,10 @@ namespace mpi {
 
   MPI_Comm get() const { return _com; }
 
+  // defined in boost.hpp if included
   inline communicator(boost::mpi::communicator);
 
-  /// Cast to the boost mpi communicator
+  /// Cast to the boost mpi communicator:  defined in boost.hpp 
   inline operator boost::mpi::communicator() const;
 
   int rank() const {

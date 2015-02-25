@@ -56,7 +56,7 @@ namespace mpi {
   communicator c;
   int root;
   template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const {
-   triqs::mpi::_invoke2(__strip(u1), Tag(), c, __strip(u2), root);
+   triqs::mpi::_assign(__strip(u1), Tag(), c, __strip(u2), root);
   }
  };
 
@@ -64,7 +64,7 @@ namespace mpi {
   communicator c;
   int root;
   template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const {
-   triqs::mpi::_invoke2(__strip(u1), tag::reduce(), c, __strip(u2), root);
+   triqs::mpi::_assign(__strip(u1), tag::reduce(), c, __strip(u2), root);
   }
   template <typename U1, typename U2> void operator()(__no_reduction<U1> &u1, __no_reduction<U2> &u2) const {
    //if (c.rank() == root)  // no, leads to a bug with tail ...
@@ -76,7 +76,7 @@ namespace mpi {
   communicator c;
   int root;
   template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const {
-   triqs::mpi::_invoke2(u1, tag::all_reduce(), c, u2, root);
+   triqs::mpi::_assign(u1, tag::all_reduce(), c, u2, root);
   }
   template <typename U1, typename U2> void operator()(__no_reduction<U1> &u1, __no_reduction<U2> &u2) const {
    __strip(u1) = __strip(u2);
@@ -103,10 +103,10 @@ namespace mpi {
   }
 
   template <typename Tag> static void complete_operation(T &lhs, mpi_lazy<Tag, T> laz) {
-   invoke2(lhs, Tag(), laz.c, laz.ref, laz.root);
+   assign(lhs, Tag(), laz.c, laz.ref, laz.root);
   }
 
-  template <typename Tag> static void invoke2(T &target, Tag, communicator c, T const &x, int root) {
+  template <typename Tag> static void _assign(T &target, Tag, communicator c, T const &x, int root) {
    triqs::tuple::for_each_zip(__2_lambda<Tag>{c, root}, get_mpi_tuple(target), get_mpi_tuple(x));
   }
  };
@@ -118,7 +118,7 @@ namespace mpi {
 
   template <typename Tag> static T invoke(Tag, communicator c, T const &a, int root) {
    T b = a;
-   mpi_impl_tuple_lazy<T>::invoke2(b, Tag(), c, a, root);
+   mpi_impl_tuple_lazy<T>::_assign(b, Tag(), c, a, root);
    return b;
   }
  };
