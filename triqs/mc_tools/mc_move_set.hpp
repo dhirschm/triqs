@@ -36,6 +36,10 @@ namespace triqs { namespace mc_tools {
  template<typename MCSignType, typename T, typename Enable=MCSignType> struct has_accept : std::false_type {};
  template<typename MCSignType, typename T> struct has_accept <MCSignType,T, decltype(std::declval<T>().accept())> : std::true_type {};
 
+ // ADD MORE  
+ template<typename MCSignType, typename T, typename Enable=MCSignType> struct has_reversible_accept : std::false_type {};
+ template<typename MCSignType, typename T> struct has_reversible_accept <MCSignType, T, decltype(std::declval<T>().reversible_accept())> : std::true_type {};
+
  template<typename T, typename Enable=void> struct has_reject : std::false_type {};
  template<typename T> struct has_reject<T, decltype(std::declval<T>().reject())> : std::true_type {};
 
@@ -49,12 +53,22 @@ namespace triqs { namespace mc_tools {
    size_t hash_;
    std::string type_name_;
 
-   std::function<MCSignType()> attempt_, accept_;
-   std::function<void()> reject_;
+   std::function<MCSignType()> attempt_, accept_, reversible_accept_;
+   std::function<void()> reject_, reversible_reject_, revert_accept_, revert_reject_;
    std::function<void(h5::group, std::string const &)> h5_r, h5_w;
 
    uint64_t NProposed, Naccepted;
    double acceptance_rate_;
+   bool has_reversibles_;
+
+   template<typename MoveType> void synthetize_reversibles (std::false_type, MoveType * p) {}
+
+   template<typename MoveType> void synthetize_reversibles (std::true_type, MoveType * p) {
+     reversible_accept_  = [p](){return p->reversible_accept();};
+     reversible_reject_  = [p](){p->reversible_reject();};
+     revert_accept_  = [p](){p->revert_accept();};
+     revert_reject_  = [p](){p->revert_reject();};
+   }
 
    template<typename MoveType>
     void construct_delegation (MoveType * p) {
@@ -70,6 +84,8 @@ namespace triqs { namespace mc_tools {
      NProposed=0;
      Naccepted=0;
      acceptance_rate_ =-1;
+     synthetize_reversibles(has_reversible_accept<MCSignType,MoveType>(), p);
+     has_reversibles_ = has_reversible_accept<MCSignType,MoveType>::value;
     }
 
    public :
@@ -94,7 +110,13 @@ namespace triqs { namespace mc_tools {
    MCSignType attempt(){ NProposed++; return attempt_();}
    MCSignType accept() { Naccepted++; return accept_(); }
    void reject() { reject_(); }
-
+  
+   MCSignType reversible_accept() { return reversible_accept_();}
+   void reversible_reject() { reversible_reject_();}
+   void revert_accept() { revert_accept_();}
+   void revert_reject() { revert_reject_();}
+   
+   bool has_reversibles() const { return has_reversibles_;}
    double acceptance_rate() const { return acceptance_rate_;}
    uint64_t n_proposed_config () const { return NProposed;}
    uint64_t n_accepted_config () const { return Naccepted;}
@@ -136,6 +158,8 @@ namespace triqs { namespace mc_tools {
    std::vector<double> Proba_Moves, Proba_Moves_Acc_Sum;
    MCSignType try_sign_ratio;
    uint64_t debug_counter;
+   bool has_reversibles_ = true; 
+
    public:
 
    ///
@@ -160,6 +184,7 @@ namespace triqs { namespace mc_tools {
      Proba_Moves.push_back(proposition_probability);
      names_.push_back(name);
      normaliseProba();// ready to run after each add !
+     has_reversibles_ &= move_vec.back().has_reversibles();
     }
 
     private:
@@ -238,6 +263,15 @@ namespace triqs { namespace mc_tools {
 #endif
     current->reject();
    }
+
+   bool has_reversibles() const { return has_reversibles_;} 
+   MCSignType reversible_accept() { 
+    MCSignType accept_sign_ratio =  current->reversible_accept();
+    return try_sign_ratio * accept_sign_ratio;
+   }
+   void reversible_reject() { current->reversible_reject(); }
+   void revert_accept() { current->revert_accept(); }
+   void revert_reject() { current->revert_reject(); }
 
    /// Pretty printing of the acceptance probability of the moves.
    std::string get_statistics(boost::mpi::communicator const & c, int shift = 0) {

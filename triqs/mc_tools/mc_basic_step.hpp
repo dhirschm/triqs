@@ -19,10 +19,7 @@
  * TRIQS. If not, see <http://www.gnu.org/licenses/>.
  *
  ******************************************************************************/
-
-#ifndef MC_STEPS_H
-#define MC_STEPS_H
-
+#pragma once
 #include <boost/mpi.hpp>
 #include "mc_move_set.hpp"
 
@@ -32,7 +29,8 @@ namespace mc_tools {
 
   // Performs one Metropolis step
   template <typename MCSignType> struct Metropolis {
-   static void do_it(move_set<MCSignType>& MoveGroup, random_generator& RNG, MCSignType& signe) {
+
+   static void generic_step(move_set<MCSignType>& MoveGroup, random_generator& RNG, MCSignType& signe) {
     double r = MoveGroup.attempt();
     if (RNG() < std::min(1.0, r)) {
 #ifdef TRIQS_MCTOOLS_DEBUG
@@ -55,5 +53,4 @@ namespace mc_tools {
  }
 }
 }
-#endif
 

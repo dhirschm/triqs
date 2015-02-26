@@ -47,6 +47,7 @@ namespace triqs { namespace mc_tools {
       : RandomGenerator(random_name, random_seed)
       , AllMoves(RandomGenerator)
       , AllMeasures()
+      , AllMeasures_on_proposed()
       , AllMeasuresAux()
       , report(&std::cout, verbosity)
       , Length_MC_Cycle(length_cycle)
@@ -71,9 +72,10 @@ namespace triqs { namespace mc_tools {
      * Register the Measure M
      */
     template<typename MeasureType>
-     void add_measure (MeasureType && M, std::string name) {
+     void add_measure (MeasureType && M, std::string name, bool on_proposed = false) {
       static_assert( !std::is_pointer<MeasureType>::value, "add_measure in mc_generic takes ONLY values !");
-      AllMeasures.insert(std::forward<MeasureType>(M), name);
+      if (on_proposed) AllMeasures_on_proposed.insert(std::forward<MeasureType>(M), name);
+      else AllMeasures.insert(std::forward<MeasureType>(M), name);
      }
 
      /**
@@ -92,15 +94,43 @@ namespace triqs { namespace mc_tools {
 
     /// Start the Monte Carlo
     bool start(MCSignType sign_init, std::function<bool ()> const & stop_callback) {
+     if (!AllMeasures_on_proposed.empty() &&  (!AllMoves.has_reversibles()))
+       TRIQS_RUNTIME_ERROR << "There are measures on proposed and some moves do not have the reversibles";
      assert(stop_callback);
      Timer.start();
      sign = sign_init; done_percent = 0; nmeasures = 0;
+     auto & the_move = AllMoves;
      sum_sign = 0;
      bool stop_it=false, finished = false;
      uint64_t NCycles_tot = NCycles+ NWarmIterations;
      report << std::endl << std::flush;
      for (NC =0; !stop_it; ++NC) {
-      for (uint64_t k=1; (k<=Length_MC_Cycle); k++) { MCStepType::do_it(AllMoves,RandomGenerator,sign); }
+      // begin of cycle
+      for (uint64_t k=1; (k<=Length_MC_Cycle-1); k++) { MCStepType::generic_step(the_move,RandomGenerator,sign); }
+      // last step of the cycle
+      if ((!thermalized()) || (AllMeasures_on_proposed.empty())) { // no need of this mess if no proposed measure
+        MCStepType::generic_step(the_move,RandomGenerator,sign); // ordinary last step
+      } else {
+       double r = the_move.attempt();
+       double accept_proba = std::min(1.0, r);
+       bool will_accept = (RandomGenerator() < accept_proba);
+
+       // we explore the branch that will be reverted ...
+       MCSignType sign_contrib =1;
+       if (will_accept)  the_move.reversible_reject(); 
+       else sign_contrib =the_move.reversible_accept();
+       AllMeasures_on_proposed.accumulate(sign * sign_contrib * accept_proba);
+       // ... then we revert the change and go into the accepted branch
+       if (will_accept) {
+         the_move.revert_reject();
+         sign *= the_move.accept();
+       } else {
+         the_move.revert_accept();
+         the_move.reject();
+        }
+      AllMeasures_on_proposed.accumulate(sign * (1 - accept_proba));
+      } // end of cycle
+
       if (after_cycle_duty) {after_cycle_duty();}
       if (thermalized()) {
        nmeasures++;
@@ -140,6 +170,7 @@ namespace triqs { namespace mc_tools {
      }
      boost::mpi::broadcast(c, sign_av, 0);
      AllMeasures.collect_results(c);
+     AllMeasures_on_proposed.collect_results(c);
 
     }
 
@@ -148,6 +179,7 @@ namespace triqs { namespace mc_tools {
      auto gr = g.create_group(name);
      h5_write(gr,"moves", mc.AllMoves);
      h5_write(gr,"measures", mc.AllMeasures);
+     h5_write(gr,"measures", mc.AllMeasures_on_proposed);
      h5_write(gr,"length_monte_carlo_cycle", mc.Length_MC_Cycle);
      h5_write(gr,"number_cycle_requested", mc.NCycles);
      h5_write(gr,"number_warming_cycle_requested", mc.NWarmIterations);
@@ -162,6 +194,7 @@ namespace triqs { namespace mc_tools {
      auto gr = g.open_group(name);
      h5_read(gr,"moves", mc.AllMoves);
      h5_read(gr,"measures", mc.AllMeasures);
+     h5_read(gr,"measures", mc.AllMeasures_on_proposed);
      h5_read(gr,"length_monte_carlo_cycle", mc.Length_MC_Cycle);
      h5_read(gr,"number_cycle_requested", mc.NCycles);
      h5_read(gr,"number_warming_cycle_requested", mc.NWarmIterations);
@@ -175,6 +208,7 @@ namespace triqs { namespace mc_tools {
     random_generator RandomGenerator;
     move_set<MCSignType> AllMoves;
     measure_set<MCSignType> AllMeasures;
+    measure_set<MCSignType> AllMeasures_on_proposed;
     std::vector<measure_aux> AllMeasuresAux;
     utility::report_stream report;
     uint64_t Length_MC_Cycle;/// Length of one Monte-Carlo cycle between 2 measures
