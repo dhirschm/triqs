@@ -128,7 +128,7 @@ namespace triqs { namespace mc_tools {
          the_move.revert_accept();
          the_move.reject();
         }
-      AllMeasures_on_proposed.accumulate(sign * (1 - accept_proba));
+       AllMeasures_on_proposed.accumulate(sign * (1 - accept_proba));
       } // end of cycle
 
       if (after_cycle_duty) {after_cycle_duty();}

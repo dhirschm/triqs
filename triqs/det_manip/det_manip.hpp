@@ -322,6 +322,8 @@ namespace triqs { namespace det_manip {
 
     void reversible_accept() {
      store_data();
+     --n_opts; // avoid any check for the matrix for this computation
+     // we do not want to check here the conditionning of the matrix...
      complete_operation();
     }
 
