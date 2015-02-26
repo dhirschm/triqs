@@ -72,39 +72,7 @@ namespace triqs { namespace det_manip {
     matrix_type mat_inv;
     long long n_opts, n_opts_max_before_check;
 
-    struct data_copy_t {
-     value_type det;
-     size_t Nmax,N, last_try;
-     std::vector<size_t> row_num,col_num;
-     std::vector<xy_type> x_values, y_values;
-     int sign;
-     matrix_type mat_inv;
-     long long n_opts, n_opts_max_before_check;
-    };
-
-    // struct holding a copy of main det data
-    data_copy_t data_copy;
-
-   private:
-
-    void store_data() {
-#define IMP(a) data_copy.a = a;
-     IMP(det);IMP(Nmax);IMP(N); IMP(last_try);
-     IMP(row_num); IMP(col_num);
-     IMP(x_values); IMP(y_values);
-     IMP(sign); IMP(mat_inv); IMP(n_opts); IMP(n_opts_max_before_check);
-#undef IMP
-    }
-
-    void restore_data() {
-#define IMP(a) std::swap(data_copy.a, a);
-     IMP(det);IMP(Nmax);IMP(N); IMP(last_try);
-     IMP(row_num); IMP(col_num);
-     IMP(x_values); IMP(y_values);
-     IMP(sign); IMP(mat_inv); IMP(n_opts); IMP(n_opts_max_before_check);
-#undef IMP
-    }
-
+   
     //  ------------     BOOST Serialization ------------
     //  What about f ? Not serialized at the moment.
     friend class boost::serialization::access;
@@ -172,6 +140,44 @@ namespace triqs { namespace det_manip {
     work_data_type2 w2;
     value_type newdet;
     int newsign;
+
+   struct data_copy_t {
+     value_type det;
+     size_t Nmax,N, last_try;
+     std::vector<size_t> row_num,col_num;
+     std::vector<xy_type> x_values, y_values;
+     int sign;
+     matrix_type mat_inv;
+     long long n_opts, n_opts_max_before_check;
+
+     work_data_type1 w1;
+     work_data_type2 w2;
+     value_type newdet;
+     int newsign;
+    };
+
+    // struct holding a copy of main det data
+    data_copy_t data_copy;
+
+    void store_data() {
+#define IMP(a) data_copy.a = a;
+     IMP(det);IMP(Nmax);IMP(N); IMP(last_try);
+     IMP(row_num); IMP(col_num);
+     IMP(x_values); IMP(y_values);
+     IMP(sign); IMP(mat_inv); IMP(n_opts); IMP(n_opts_max_before_check);
+     IMP(w1); IMP(w2); IMP(newdet); IMP(newsign);
+#undef IMP
+    }
+
+    void restore_data() {
+#define IMP(a) std::swap(data_copy.a, a);
+     IMP(det);IMP(Nmax);IMP(N); IMP(last_try);
+     IMP(row_num); IMP(col_num);
+     IMP(x_values); IMP(y_values);
+     IMP(sign); IMP(mat_inv); IMP(n_opts); IMP(n_opts_max_before_check);
+     IMP(w1); IMP(w2); IMP(newdet); IMP(newsign);
+#undef IMP
+    }
 
    private: // for the move constructor, I need to separate the swap since f may not be defaulted constructed
     void swap_but_f (det_manip & rhs) noexcept {
@@ -314,7 +320,6 @@ namespace triqs { namespace det_manip {
      foreach(d.mat_inv(R,R), [&f,&d](int i, int j) { return f(d.x_values[i], d.y_values[j], d.mat_inv(j,i));});
     }
 
-
     void reversible_accept() {
      store_data();
      complete_operation();
@@ -326,7 +331,6 @@ namespace triqs { namespace det_manip {
 
     void reversible_reject() {}
     void revert_reject() {}
-
 
     // ------------------------- OPERATIONS -----------------------------------------------
 
@@ -431,15 +435,15 @@ namespace triqs { namespace det_manip {
      col_num[w1.j] = N-1;
 
      // Minv is ok, we need to complete
-     w1.ksi = 1/w1.ksi;
+     auto ksi_inv = 1/w1.ksi;
 
      // compute the change to the inverse
      // M += w1.ksi w1.MB w1.MC with BLAS. first put the 0
      range R(0,N);
      mat_inv(R,N-1) = 0;
      mat_inv(N-1,R) = 0;
-     //mat_inv(R,R) += w1.ksi* w1.MB(R) * w1.MC(R)// OPTIMIZE BELOW
-     blas::ger(w1.ksi, w1.MB(R) ,w1.MC(R),mat_inv(R,R));
+     //mat_inv(R,R) += ksi_inv* w1.MB(R) * w1.MC(R)// OPTIMIZE BELOW
+     blas::ger(ksi_inv, w1.MB(R) ,w1.MC(R),mat_inv(R,R));
     }
 
    public :
@@ -537,12 +541,12 @@ namespace triqs { namespace det_manip {
       for (int_type i =N-2; i>=int_type(w2.j[k]); i--) col_num[i+1]= col_num[i];
       col_num[w2.j[k]] = N-1;
      }
-     w2.ksi = inverse (w2.ksi);
+     auto ksi_inv = inverse (w2.ksi);
      range R(0,N);
      mat_inv(R,range(N-2,N)) = 0;
      mat_inv(range(N-2,N),R) = 0;
-     //mat_inv(R,R) += w2.MB(R,R2) * (w2.ksi * w2.MC(R2,R)); // OPTIMIZE BELOW
-     blas::gemm(1.0, w2.MB(R,R2), (w2.ksi * w2.MC(R2,R)),1.0,mat_inv(R,R) );
+     //mat_inv(R,R) += w2.MB(R,R2) * (ksi_inv * w2.MC(R2,R)); // OPTIMIZE BELOW
+     blas::gemm(1.0, w2.MB(R,R2), (ksi_inv * w2.MC(R2,R)),1.0,mat_inv(R,R) );
     }
 
    public:
@@ -591,11 +595,11 @@ namespace triqs { namespace det_manip {
      N--;
 
      // M <- a - d^-1 b c with BLAS
-     w1.ksi = - 1/mat_inv(N,N);
+     auto ksi_inv = - 1/mat_inv(N,N);
      range R(0,N);
 
      //mat_inv(R,R) += w1.ksi, * mat_inv(R,N) * mat_inv(N,R);
-     blas::ger(w1.ksi,mat_inv(R,N),mat_inv(N,R), mat_inv(R,R));
+     blas::ger(ksi_inv,mat_inv(R,N),mat_inv(N,R), mat_inv(R,R));
 
      // modify the permutations
      for (size_t k =w1.i; k<N; k++) {row_num[k]= row_num[k+1];}
@@ -685,11 +689,12 @@ namespace triqs { namespace det_manip {
      range Rn(0,N), Rl(N,N+2);
      //w2.ksi = mat_inv(Rl,Rl);
      //w2.ksi = inverse( w2.ksi);
-     w2.ksi =  inverse( mat_inv(Rl,Rl));
+     //w2.ksi =  inverse( mat_inv(Rl,Rl));
+     auto ksi_inv =  inverse( mat_inv(Rl,Rl));
 
      // write explicitely the second product on ksi for speed ?
-     //mat_inv(Rn,Rn) -= mat_inv(Rn,Rl) * (w2.ksi * mat_inv(Rl,Rn)); // OPTIMIZE BELOW
-     blas::gemm(-1.0, mat_inv(Rn,Rl), w2.ksi * mat_inv(Rl,Rn),1.0,  mat_inv(Rn,Rn) );
+     //mat_inv(Rn,Rn) -= mat_inv(Rn,Rl) * (ksi_inv * mat_inv(Rl,Rn)); // OPTIMIZE BELOW
+     blas::gemm(-1.0, mat_inv(Rn,Rl), ksi_inv * mat_inv(Rl,Rn),1.0,  mat_inv(Rn,Rn) );
 
      // modify the permutations
      for (size_t k =w2.i[0]; k<w2.i[1]-1; k++)   row_num[k] = row_num[k+1];
