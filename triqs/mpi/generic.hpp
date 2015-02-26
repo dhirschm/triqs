@@ -52,15 +52,12 @@ namespace mpi {
   int root;
   template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const { triqs::mpi::_assign(u1, Tag(), c, u2, root); }
  };
-
+/*
  template <> struct __2_lambda<tag::reduce> {
   communicator c;
   int root;
   template <typename U1, typename U2> void operator()(U1 &u1, U2 &u2) const {
    triqs::mpi::_assign(u1, tag::reduce(), c, u2, root);
-  }
-  template <typename U1, typename U2> void operator()(__no_reduction<U1> &u1, __no_reduction<U2> &u2) const {
-   //if (c.rank() == root)  // no, leads to a bug with tail ...
    u1 = u2;
   }
  };
@@ -76,7 +73,7 @@ namespace mpi {
    triqs::mpi::broadcast(__strip(u1), c, root);
   }
  };
-
+*/
  // to allow to access the data...
  struct access { 
   template<typename T>

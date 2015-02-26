@@ -51,7 +51,21 @@ namespace mpi {
   // it implements the operation
   // template <typename Tag> static void _assign(T &lhs, Tag, T const &a, communicator c, int root, bool all);
  };
+/*
+ For a user class T: 
 
+  * broadcast, send, recv ... are implemented using the serialize method.
+
+  * reduce : implement
+     
+      void mpi_reduce ( T& lhs, T const & rhs, communicator c, int root, bool all);
+
+  * gather/scatter : 
+      
+      void mpi_scatter(T& lhs, T const & rhs, communicator c, int root);
+      void mpi_gather(T& lhs, T const & rhs, communicator c, int root, bool all);
+        
+*/
  // -----------------------------
   
  /// A small lazy tagged class 
@@ -104,9 +118,7 @@ namespace mpi {
 
  template <class T> MPI_Datatype mpi_datatype();
 #define D(T, MPI_TY)                                                                                                             \
- template <> MPI_Datatype mpi_datatype<T> { return MPI_TY; }                                                                     \
- }                                                                                                                               \
- ;
+ template <> MPI_Datatype mpi_datatype<T>(){ return MPI_TY; }                                                                     
  D(int, MPI_INT) D(long, MPI_LONG) D(double, MPI_DOUBLE) D(float, MPI_FLOAT) D(std::complex<double>, MPI_DOUBLE_COMPLEX);
  D(unsigned long, MPI_UNSIGNED_LONG); D(unsigned int, MPI_UNSIGNED); D(unsigned long long, MPI_UNSIGNED_LONG_LONG);
 #undef D

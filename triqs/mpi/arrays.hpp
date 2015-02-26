@@ -47,7 +47,7 @@ namespace mpi {
 
    if (std::is_same<Tag, tag::gather>::value) {
     if (!all)
-     dims[0] = (c.rank() == mpi::reduce(slow_size, c, root) ? s : 1); // valid only on root
+     dims[0] = (c.rank() == root ? mpi::reduce(slow_size, c, root) : 1); // valid only on root
     else
      dims[0] = mpi::all_reduce(slow_size, c, root); // in this case, it is valid on all nodes
    }
@@ -73,7 +73,7 @@ namespace mpi {
   static void broadcast(A &a, communicator c, int root) {
    check_is_contiguous(a);
    auto sh = a.shape();
-   MPI_Bcast(&sh[0], sh.size(), mpi_datatype<typename decltype(sh)::value_type>::invoke(), root, c.get());
+   MPI_Bcast(&sh[0], sh.size(), mpi_datatype<typename decltype(sh)::value_type>(), root, c.get());
    if (c.rank() != root) a.resize(sh);
    MPI_Bcast(a.data_start(), a.domain().number_of_elements(), D(), root, c.get());
   }
@@ -125,6 +125,8 @@ namespace arrays {
     auto rhs_n_elem = laz.ref.domain().number_of_elements();
     void *lhs_p = lhs.data_start();
     void *rhs_p = laz.ref.data_start();
+    auto c = laz.c;
+    auto root = laz.root;
 
     bool in_place = (lhs_p == rhs_p); // to be refined. Overlapping condition
     // some checks.
@@ -140,15 +142,15 @@ namespace arrays {
      if (in_place)
       MPI_Reduce((c.rank() == root ? MPI_IN_PLACE : rhs_p), rhs_p, rhs_n_elem, D(), MPI_SUM, root, c.get());
      else {
-      if (laz.c.rank() == laz.root) lhs.resize(laz.domain());
-      MPI_Reduce(rhs_p, lhs_p, rhs_n_elem, D(), MPI_SUM, laz.root, laz.c.get());
+      if (c.rank() == root) lhs.resize(laz.domain());
+      MPI_Reduce(rhs_p, lhs_p, rhs_n_elem, D(), MPI_SUM, root, c.get());
      }
     } else { // all reduce
      if (in_place)
       MPI_Allreduce(MPI_IN_PLACE, rhs_p, rhs_n_elem, D(), MPI_SUM, c.get());
      else {
       lhs.resize(laz.domain());
-      MPI_Allreduce(rhs_p, lhs_p, rhs_n_elem, D(), MPI_SUM, laz.c.get());
+      MPI_Allreduce(rhs_p, lhs_p, rhs_n_elem, D(), MPI_SUM, c.get());
      }
     }
    }
