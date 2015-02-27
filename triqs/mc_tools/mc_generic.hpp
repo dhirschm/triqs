@@ -113,30 +113,28 @@ namespace triqs { namespace mc_tools {
       } else {
        double r = the_move.attempt();
        double accept_proba = std::min(1.0, r);
-       bool will_accept = (RandomGenerator() < accept_proba);
+       const bool will_accept = (RandomGenerator() < accept_proba);
 
        // we explore the branch that will be reverted but only if 0 < accept_proba < 1
-       MCSignType sign_contrib =1;
-       if ((accept_proba > 0.0) && (accept_proba < 1.0)) {
-         if (will_accept) {
-           the_move.reversible_reject(); 
-           AllMeasures_on_proposed.accumulate(sign * sign_contrib * (1-accept_proba));
-         }
-         else {
-           sign_contrib = the_move.reversible_accept();
-           AllMeasures_on_proposed.accumulate(sign * sign_contrib * accept_proba);
-         }
+       const double p = (will_accept ? accept_proba : 1 - accept_proba);
+       const bool make_excursion = (accept_proba > 0.0) && (accept_proba < 1.0);
+       if (make_excursion) {
+        MCSignType sign_contrib = 1;
+        if (will_accept)
+         the_move.reversible_reject();
+        else
+         sign_contrib = the_move.reversible_accept();
+        AllMeasures_on_proposed.accumulate(sign * sign_contrib * (1 - p));
        }
        // then we revert the change and go into the accepted branch
        if (will_accept) {
-         if (accept_proba < 1.0) the_move.revert_reject();
-         sign *= the_move.accept();
-         AllMeasures_on_proposed.accumulate(sign * accept_proba);
+        if (make_excursion) the_move.revert_reject();
+        sign *= the_move.accept();
        } else {
-         if (accept_proba > 0.0) the_move.revert_accept();
-         the_move.reject();
-         AllMeasures_on_proposed.accumulate(sign * (1-accept_proba));
+        if (make_excursion) the_move.revert_accept();
+        the_move.reject();
        }
+       AllMeasures_on_proposed.accumulate(sign * p);
       } // end of cycle
 
       if (after_cycle_duty) {after_cycle_duty();}
