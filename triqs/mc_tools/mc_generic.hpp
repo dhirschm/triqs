@@ -115,20 +115,28 @@ namespace triqs { namespace mc_tools {
        double accept_proba = std::min(1.0, r);
        bool will_accept = (RandomGenerator() < accept_proba);
 
-       // we explore the branch that will be reverted ...
+       // we explore the branch that will be reverted but only if 0 < accept_proba < 1
        MCSignType sign_contrib =1;
-       if (will_accept)  the_move.reversible_reject(); 
-       else sign_contrib =the_move.reversible_accept();
-       AllMeasures_on_proposed.accumulate(sign * sign_contrib * accept_proba);
-       // ... then we revert the change and go into the accepted branch
+       if ((accept_proba > 0.0) && (accept_proba < 1.0)) {
+         if (will_accept) {
+           the_move.reversible_reject(); 
+           AllMeasures_on_proposed.accumulate(sign * sign_contrib * (1-accept_proba));
+         }
+         else {
+           sign_contrib = the_move.reversible_accept();
+           AllMeasures_on_proposed.accumulate(sign * sign_contrib * accept_proba);
+         }
+       }
+       // then we revert the change and go into the accepted branch
        if (will_accept) {
-         the_move.revert_reject();
+         if (accept_proba < 1.0) the_move.revert_reject();
          sign *= the_move.accept();
+         AllMeasures_on_proposed.accumulate(sign * accept_proba);
        } else {
-         the_move.revert_accept();
+         if (accept_proba > 0.0) the_move.revert_accept();
          the_move.reject();
-        }
-       AllMeasures_on_proposed.accumulate(sign * (1 - accept_proba));
+         AllMeasures_on_proposed.accumulate(sign * (1-accept_proba));
+       }
       } // end of cycle
 
       if (after_cycle_duty) {after_cycle_duty();}
