@@ -274,6 +274,27 @@ namespace triqs { namespace det_manip {
      row_num.clear(); col_num.clear(); x_values.clear(); y_values.clear();
     }
 
+    template<typename ArgumentContainer1, typename ArgumentContainer2>
+    void initialize (ArgumentContainer1 const & X, ArgumentContainer2 const & Y) {
+      if (X.size() != Y.size()) TRIQS_RUNTIME_ERROR<< " X.size != Y.size";
+      clear();
+      _construct_common();
+      N = X.size();
+      if (N==0) { det = 1; reserve(30); return;}
+      if (N>Nmax) reserve(2*N); // put some margin..
+      std::copy(X.begin(),X.end(), std::back_inserter(x_values));
+      std::copy(Y.begin(),Y.end(), std::back_inserter(y_values));
+      mat_inv()=0;
+      for (size_t i=0; i<N; ++i) {
+       row_num.push_back(i);col_num.push_back(i);
+       for (size_t j=0; j<N; ++j)
+	mat_inv(i,j) = f(x_values[i],y_values[j]);
+      }
+      range R(0,N);
+      det = arrays::determinant(mat_inv(R,R));
+      mat_inv(R,R) = inverse(mat_inv(R,R));
+     }
+
     //----------------------- READ ACCESS TO DATA ----------------------------------
 
     /// Current size of the matrix
@@ -832,7 +853,17 @@ namespace triqs { namespace det_manip {
 
      // since we have the proper inverse, replace the matrix and the det
      mat_inv(R,R) = res;
+
+     // find the sign (there must be a better way...)
+     double s = 1.0;
+     arrays::matrix<double> m(N,N);
+     m() = 0.0; for (int i=0; i<N; i++) m(i,row_num[i]) = 1;
+     s *= arrays::determinant(m);
+     m() = 0.0; for (int i=0; i<N; i++) m(i,col_num[i]) = 1;
+     s *= arrays::determinant(m);
+
      det = 1/arrays::determinant(mat_inv(R,R)); // the det is the det of the matrix, hence inverse of mat_inv
+     sign = (s > 0 ? 1 : -1);
     }
 
   //------------------------------------------------------------------------------------------
